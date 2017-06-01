@@ -1,3 +1,4 @@
+var fs = require('fs');
 var parser = require('url');
 var stream = require('stream');
 var querystring = require('querystring');
@@ -21,10 +22,10 @@ this file and include it in basic-server.js so that it actually works.
 *Hint* Check out the node module documentation at http://nodejs.org/api/modules.html.
 
 **************************************************************/
+var currentId = 1;
+
 var messages = [
-  { objectId: 1, text: "Hello World 1", username: "ASdF", roomname: "lobby" },
-  { objectId: 2, text: "Hello World 2", username: "ASdF", roomname: "lobby" },
-  { objectId: 3, text: "Hello World 3", username: "ASdF", roomname: "lobby" }
+  { objectId: 0, text: "Hello World 1", username: "ASdF", roomname: "lobby", createdAt: new Date() },
 ];
 
 
@@ -73,25 +74,46 @@ var requestHandler = function(request, response) {
       arr.results = message
       response.end(JSON.stringify(arr));
     } else {
-      arr.results = messages
+      if (parsedUrl.query.order) {
+        var order = parsedUrl.query.order;
+        var asc = order[0] === '-' ? false : true;
+        order = asc === false ? order.slice(1) : order;
+        arr.results = messages.sort((a, b) => {
+          if (asc) {
+            return a[order] - b[order];
+          } else {
+            return b[order] - a[order];
+          }
+        });
+      } else {
+        arr.results = messages
+      }
       response.end(JSON.stringify(arr));
     }
   } else if (request.method === 'POST' && parsedUrl.pathname === '/classes/messages') {
     request.on('data', (stringifiedData) => {
       if (Buffer.isBuffer(stringifiedData)) {
         stringifiedData = querystring.parse(stringifiedData.toString());
-        messages.push(stringifiedData);
+        messages.push(Object.assign({}, stringifiedData, {objectId: currentId++, createdAt: new Date()}));
       } else {
-        messages.push(JSON.parse(stringifiedData));
+        messages.push(JSON.parse(Object.assign({}, stringifiedData, {objectId: currentId++, createdAt: new Date()})));
       }
+      statusCode = 201;
+      response.writeHead(statusCode, headers);
+      response.end(JSON.stringify(stringifiedData));
     });
-    statusCode = 201;
-    response.writeHead(statusCode, headers);
-    response.end(JSON.stringify(arr));
   } else if (request.method === "OPTIONS") {
     statusCode = 200;
     response.writeHead(statusCode, headers);
     response.end()
+  } else if (request.method === "GET" && /\.(html|css|js)$/.test(parsedUrl.pathname)) {
+    var pathname = `${__dirname}/../client${parsedUrl.pathname}`;
+    fs.readFile(pathname, 'utf8', (error, data) => {
+      if (error) throw new Error(error);
+      headers['Content-Type'] = 'text/html';
+      response.writeHead(statusCode, headers);
+      response.end(data);
+    });
   } else {
     statusCode = 404;
     response.writeHead(statusCode, headers);
